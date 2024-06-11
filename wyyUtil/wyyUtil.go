@@ -81,7 +81,7 @@ func GetPlayStatus() bool {
 				break
 			}
 		}
-		if err != nil {
+		if err == nil {
 			break
 		}
 	}

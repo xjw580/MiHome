@@ -1,11 +1,13 @@
 package mqtt
 
+import "C"
 import (
 	"bemfa-demo/systemUtil"
 	"bemfa-demo/wyyUtil"
 	"bufio"
 	"fmt"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
+	"github.com/go-toast/toast"
 	"log"
 	"os"
 	"os/exec"
@@ -14,19 +16,21 @@ import (
 )
 
 var (
-	defaultConfig  = [...]string{"cloudmusicPath=", "key=", "topicName="}
+	defaultConfig  = [...]string{"cloudmusicPath=", "key=", "topicName=", "iconPath="}
 	key            = "key"
 	cloudmusicPath = "cloudmusicPath"
 	topic          = "topicName"
 	pubSet         = "/set"
 	pubUp          = "/up"
+	iconPath       = "iconPath"
 )
 
 const (
-	topicType  = "005"
-	server     = "bemfa.com"
-	port       = "9501"
-	configPath = "config.properties"
+	topicType   = "005"
+	server      = "bemfa.com"
+	port        = "9501"
+	configPath  = "config.properties"
+	programName = "MiHome"
 )
 
 var (
@@ -59,7 +63,13 @@ var (
 
 func init() {
 	if !loadConfig() {
-		log.Fatalf("读取配置文件异常")
+		notice(programName, "error", "读取配置文件异常", iconPath, "", "")
+		log.Println("读取配置文件异常")
+		os.Exit(-1)
+	}
+	if key == "" {
+		notice(programName, "error", "Failed to connect to MQTT broker", iconPath, "", "")
+		return
 	}
 	// 定义MQTT连接选项
 	opts := MQTT.NewClientOptions()
@@ -74,7 +84,36 @@ func init() {
 	// 创建MQTT客户端
 	client = MQTT.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		notice(programName, "error", "Failed to connect to MQTT broker", iconPath, "", "")
 		log.Fatalf("Failed to connect to MQTT broker: %v", token.Error())
+	}
+
+}
+
+func notice(appID, title, msg, icoPath, btnText, btnURL string) {
+	var notification toast.Notification
+	if btnText == "" {
+		notification = toast.Notification{
+			AppID:   appID,
+			Title:   title,
+			Message: msg,
+			Icon:    icoPath,
+		}
+	} else {
+		notification = toast.Notification{
+			AppID:   appID,
+			Title:   title,
+			Message: msg,
+			Icon:    icoPath,
+			Actions: []toast.Action{
+				{"protocol", btnText, btnURL},
+			},
+		}
+	}
+
+	err := notification.Push()
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -146,6 +185,7 @@ func loadConfig() bool {
 		topic = properties[topic] + topicType
 		pubSet = topic + topicType
 		pubUp = topic + topicType
+		iconPath = properties[iconPath]
 		// 打印 properties map
 		for key, value := range properties {
 			fmt.Printf("%s = %s\n", key, value)
@@ -174,8 +214,10 @@ func Launch() {
 		message.Ack()
 	}); token.Wait() && token.Error() != nil {
 		log.Fatalf("Failed to subscribe to topic: %v", token.Error())
+	} else {
+		sprintf := fmt.Sprintf("Subscribed to topic: %s\n", topic)
+		notice(programName, "successful", sprintf, iconPath, "", "")
 	}
-	fmt.Printf("Subscribed to topic: %s\n", topic)
 }
 
 // 发布消息
@@ -199,4 +241,16 @@ var connectSuccessHandler MQTT.OnConnectHandler = func(client MQTT.Client) {
 // 连接丢失的处理器
 var connectLostHandler MQTT.ConnectionLostHandler = func(client MQTT.Client, err error) {
 	fmt.Printf("Connection lost: %v\n", err)
+	execPath, err := os.Executable()
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println("reboot...")
+	notice(programName, "successful", "reboot...", iconPath, "", "")
+	go func() {
+		exec.Command(execPath).Start()
+	}()
+	time.Sleep(250 * time.Millisecond)
+	os.Exit(0)
 }
